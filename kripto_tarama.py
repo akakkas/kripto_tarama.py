@@ -1,4 +1,3 @@
-cat > ~/kripto_tarama.py << 'EOF'
 import ccxt, numpy as np
 from datetime import datetime, timezone, timedelta
 
