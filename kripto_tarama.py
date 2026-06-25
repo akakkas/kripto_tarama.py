@@ -1,9 +1,10 @@
-import ccxt, os, requests, numpy as np
+import ccxt, os, sys, time, requests, numpy as np
 from datetime import datetime, timezone, timedelta
 
 INTERVAL="15m"; PERIOD=10; MULT=3.0; LIMIT=200
 LOOKBACK=3; RVOLW=20; TOPN=150; MINVOL=20_000_000
 BBP=20; BBK=2.0; MAXEXT=0.03; RVOLMIN=1.5
+BAR_SEC=15*60; BUFFER=5
 TZ=timezone(timedelta(hours=3))
 
 def load_env(path=os.path.expanduser("~/.ktenv")):
@@ -14,8 +15,7 @@ def load_env(path=os.path.expanduser("~/.ktenv")):
                 ln=ln.strip()
                 if "=" in ln and not ln.startswith("#"):
                     k,v=ln.split("=",1); d[k.strip()]=v.strip()
-    except FileNotFoundError:
-        pass
+    except FileNotFoundError: pass
     return d
 
 _e=load_env()
@@ -71,29 +71,29 @@ def rvol(v,w=RVOLW):
     o=v[-(w+1):-1].mean()
     return v[-1]/o if o>0 else float("nan")
 
-def sinyal_bul(close,st,d,mb,up,dn,vol):
+def sinyal_bul(close,st,d,mb,up,dn,vol,ts):
     n=len(close); rv=rvol(vol)
-    yon=None; end=max(1,n-LOOKBACK)
+    yon=None; fi=None; end=max(1,n-LOOKBACK)
     for i in range(n-1,end-1,-1):
         if d[i]!=d[i-1]:
-            yon="AL" if d[i]==1 else "SAT"; break
+            yon="AL" if d[i]==1 else "SAT"; fi=i; break
     c=close[-1]; stv=st[-1]; upv=up[-1]; dnv=dn[-1]; mbv=mb[-1]
     if yon=="AL":
         ext=(c-stv)/stv if stv>0 else 9
-        if c<upv and ext<=MAXEXT: return ("FLIP","AL",rv)
-        return (None,None,rv)
+        if c<upv and ext<=MAXEXT: return ("FLIP","AL",rv,int(ts[fi]))
+        return (None,None,rv,0)
     if yon=="SAT":
         ext=(stv-c)/c if c>0 else 9
-        if c>dnv and ext<=MAXEXT: return ("FLIP","SAT",rv)
-        return (None,None,rv)
+        if c>dnv and ext<=MAXEXT: return ("FLIP","SAT",rv,int(ts[fi]))
+        return (None,None,rv,0)
     if not np.isnan(mbv) and not np.isnan(mb[-2]) and rv==rv:
         if d[-1]==1 and close[-2]<mb[-2] and c>mbv and rv>=RVOLMIN:
-            return ("RETEST","AL",rv)
+            return ("RETEST","AL",rv,int(ts[-1]))
         if d[-1]==-1 and close[-2]>mb[-2] and c<mbv and rv>=RVOLMIN:
-            return ("RETEST","SAT",rv)
-    return (None,None,rv)
+            return ("RETEST","SAT",rv,int(ts[-1]))
+    return (None,None,rv,0)
 
-def main():
+def tarama():
     ex=ccxt.binanceusdm({"enableRateLimit":True}); ex.load_markets()
     perp=[m["symbol"] for m in ex.markets.values()
           if m.get("swap") and m.get("linear") and m.get("quote")=="USDT" and m.get("active")]
@@ -108,25 +108,57 @@ def main():
         except Exception as e: print("  !",s,e); continue
         if not raw or len(raw)<need: continue
         a=np.array(raw[:-1],dtype=float)
-        h,l,c,v=a[:,2],a[:,3],a[:,4],a[:,5]
+        tsa=a[:,0]; h,l,c,v=a[:,2],a[:,3],a[:,4],a[:,5]
         st,d=supertrend(h,l,c); mb,up,dn=bollinger(c)
-        tip,yon,rv=sinyal_bul(c,st,d,mb,up,dn,v)
+        tip,yon,rv,trig=sinyal_bul(c,st,d,mb,up,dn,v,tsa)
         if tip is None: continue
-        px=float(c[-1]); bul.append((s,tip,yon,px,rv))
+        px=float(c[-1]); bul.append((s,tip,yon,px,rv,trig))
         ico="♻️" if tip=="RETEST" else ("🟢" if yon=="AL" else "🔴")
         print(f"  {ico} {s.split('/')[0]:<10} {tip}/{yon}  px:{px}  rvol:{rv:.1f}x")
+    return bul,len(syms)
+
+def satir(b):
+    s,tip,yon,px,rv,_=b
+    ico="♻️" if tip=="RETEST" else ("🟢" if yon=="AL" else "🔴")
+    return f"{ico} {s.split('/')[0]} {tip}/{yon}  px:{px} rvol:{rv:.1f}x"
+
+def ozet_mesaj(bul,nc,hepsi=True):
     ts=datetime.now(TZ).strftime("%H:%M")
+    lines=["📡 KRİPTO SUPERTREND", f"🕐 {ts} · {INTERVAL} · {nc} perp", "──────────────"]
+    if bul: lines+= [satir(b) for b in bul]
+    elif hepsi: lines.append("Temiz kurulum yok")
     al=sum(1 for b in bul if b[2]=='AL'); sat=sum(1 for b in bul if b[2]=='SAT')
-    print(f"\nÖZET {ts} — AL:{al} SAT:{sat}  (toplam {len(bul)})")
-    lines=["📡 KRİPTO SUPERTREND", f"🕐 {ts} · {INTERVAL} · {len(syms)} perp", "──────────────"]
-    if bul:
-        for s,tip,yon,px,rv in bul:
-            ico="♻️" if tip=="RETEST" else ("🟢" if yon=="AL" else "🔴")
-            lines.append(f"{ico} {s.split('/')[0]} {tip}/{yon}  px:{px} rvol:{rv:.1f}x")
-    else:
-        lines.append("Temiz kurulum yok")
-    lines.append("──────────────"); lines.append(f"AL:{al} SAT:{sat}")
-    tg("\n".join(lines))
+    lines+=["──────────────", f"AL:{al} SAT:{sat}"]
+    return "\n".join(lines)
+
+def bekle():
+    now=time.time(); nxt=(now//BAR_SEC+1)*BAR_SEC+BUFFER
+    return max(1,nxt-now)
+
+def loop():
+    print("Döngü başladı — her 15dk taranacak. Durdurmak için Ctrl+C.")
+    tg("🤖 Kripto tarayıcı başladı — 15dk döngü aktif.")
+    seen=set()
+    while True:
+        try:
+            bul,nc=tarama()
+            yeni=[b for b in bul if (b[0],b[1],b[5]) not in seen]
+            for b in yeni: seen.add((b[0],b[1],b[5]))
+            if yeni:
+                ts=datetime.now(TZ).strftime("%H:%M")
+                msg=["📡 KRİPTO SUPERTREND", f"🕐 {ts} · {INTERVAL}", "──────────────"]+[satir(b) for b in yeni]
+                tg("\n".join(msg))
+            if len(seen)>5000: seen.clear()
+        except Exception as e:
+            print("loop hata:", e)
+        time.sleep(bekle())
 
 if __name__=="__main__":
-    main()
+    if len(sys.argv)>1 and sys.argv[1]=="once":
+        bul,nc=tarama()
+        ts=datetime.now(TZ).strftime("%H:%M")
+        al=sum(1 for b in bul if b[2]=='AL'); sat=sum(1 for b in bul if b[2]=='SAT')
+        print(f"\nÖZET {ts} — AL:{al} SAT:{sat}  (toplam {len(bul)})")
+        tg(ozet_mesaj(bul,nc,hepsi=True))
+    else:
+        loop()
