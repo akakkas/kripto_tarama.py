@@ -1,9 +1,9 @@
 import ccxt, os, sys, time, requests, numpy as np
 from datetime import datetime, timezone, timedelta
 
-INTERVAL="15m"; PERIOD=10; MULT=3.0; LIMIT=200
+INTERVAL="15m"; HTF="1h"; PERIOD=10; MULT=3.0; LIMIT=200
 LOOKBACK=3; RVOLW=20; TOPN=150; MINVOL=20_000_000
-BBP=20; BBK=2.0; MAXEXT=0.03; RVOLMIN=1.5
+BBP=20; BBK=2.0; MAXEXT=0.03; RVOLMIN=1.5; SWINGK=6
 BAR_SEC=15*60; BUFFER=5
 TZ=timezone(timedelta(hours=3))
 
@@ -32,6 +32,14 @@ def tg(text):
         if not j.get("ok"): print("  ! TG hata:", j.get("description"))
     except Exception as ex:
         print("  ! TG:", ex)
+
+def f(x):
+    if x is None or x!=x: return "-"
+    a=abs(x)
+    if a>=100: return f"{x:.2f}"
+    if a>=1: return f"{x:.3f}"
+    if a>=0.01: return f"{x:.5f}"
+    return f"{x:.7f}"
 
 def supertrend(h,l,c,period=PERIOD,mult=MULT):
     n=len(c); hl2=(h+l)/2.0
@@ -93,6 +101,24 @@ def sinyal_bul(close,st,d,mb,up,dn,vol,ts):
             return ("RETEST","SAT",rv,int(ts[-1]))
     return (None,None,rv,0)
 
+def rr_hesapla(yon,px,h,l,up,dn):
+    if yon=="AL":
+        stop=float(np.min(l[-SWINGK:])); tp=float(up[-1])
+        risk=px-stop; rew=tp-px
+    else:
+        stop=float(np.max(h[-SWINGK:])); tp=float(dn[-1])
+        risk=stop-px; rew=px-tp
+    rr=rew/risk if risk>0 else 0.0
+    return stop,tp,rr
+
+def htf_yon(ex,sym,tf=HTF):
+    try: raw=ex.fetch_ohlcv(sym,tf,limit=100)
+    except Exception: return 0
+    if not raw or len(raw)<PERIOD+3: return 0
+    a=np.array(raw[:-1],dtype=float)
+    st,d=supertrend(a[:,2],a[:,3],a[:,4])
+    return int(d[-1])
+
 def tarama():
     ex=ccxt.binanceusdm({"enableRateLimit":True}); ex.load_markets()
     perp=[m["symbol"] for m in ex.markets.values()
@@ -112,15 +138,22 @@ def tarama():
         st,d=supertrend(h,l,c); mb,up,dn=bollinger(c)
         tip,yon,rv,trig=sinyal_bul(c,st,d,mb,up,dn,v,tsa)
         if tip is None: continue
-        px=float(c[-1]); bul.append((s,tip,yon,px,rv,trig))
+        px=float(c[-1])
+        stop,tp,rr=rr_hesapla(yon,px,h,l,up,dn)
+        hy=htf_yon(ex,s)
+        htf_ok=1 if (yon=="AL" and hy==1) or (yon=="SAT" and hy==-1) else 0
+        bul.append((s,tip,yon,px,rv,trig,stop,tp,rr,htf_ok))
         ico="♻️" if tip=="RETEST" else ("🟢" if yon=="AL" else "🔴")
-        print(f"  {ico} {s.split('/')[0]:<10} {tip}/{yon}  px:{px}  rvol:{rv:.1f}x")
+        teyit="✅" if htf_ok else "⚠️"
+        print(f"  {ico} {s.split('/')[0]:<10} {tip}/{yon} {teyit}  px:{f(px)} stop:{f(stop)} tp:{f(tp)} R:R{rr:.1f} rvol:{rv:.1f}x")
     return bul,len(syms)
 
 def satir(b):
-    s,tip,yon,px,rv,_=b
+    s,tip,yon,px,rv,trig,stop,tp,rr,htf_ok=b
     ico="♻️" if tip=="RETEST" else ("🟢" if yon=="AL" else "🔴")
-    return f"{ico} {s.split('/')[0]} {tip}/{yon}  px:{px} rvol:{rv:.1f}x"
+    teyit="✅1s" if htf_ok else "⚠️1s"
+    return (f"{ico} {s.split('/')[0]} {tip}/{yon} {teyit}\n"
+            f"    px:{f(px)} stop:{f(stop)} tp:{f(tp)} R:R {rr:.1f} rvol:{rv:.1f}x")
 
 def ozet_mesaj(bul,nc,hepsi=True):
     ts=datetime.now(TZ).strftime("%H:%M")
