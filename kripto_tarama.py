@@ -166,9 +166,9 @@ def tarama():
 def satir(b):
     s,tip,yon,px,rv,trig,stop,tp,rr,htf_ok=b
     if tip=="TREND":
-        arrow="↓" if yon=="SAT" else "↑"; cik="Long" if yon=="SAT" else "Short"
-        return (f"🟡 {s.split('/')[0]} TREND{arrow} — {cik} çıkış uyarısı\n"
-                f"    px:{f(px)} · orta band kırıldı, trend zayıfladı")
+        ico="🟢⬆️❌" if yon=="SAT" else "🔴⬇️✖️"; cik="Long" if yon=="SAT" else "Short"
+        return (f"{ico} {s.split('/')[0]} — {cik} çıkış uyarısı\n"
+                f"    px:{f(px)} · rvol:{rv:.1f}x")
     ico="♻️" if tip=="RETEST" else ("🟢" if yon=="AL" else "🔴")
     teyit="✅1s" if htf_ok else "⚠️1s"
     return (f"{ico} {s.split('/')[0]} {tip}/{yon} {teyit}\n"
@@ -177,7 +177,7 @@ def satir(b):
 def ozet_mesaj(bul,nc,hepsi=True):
     ts=datetime.now(TZ).strftime("%H:%M")
     lines=["📡 KRİPTO SUPERTREND", f"🕐 {ts} · {INTERVAL} · {nc} perp", "──────────────"]
-    if bul: lines+= [satir(b) for b in bul]
+    if bul: lines+= [satir(b) for b in sorted(bul,key=lambda b:b[8],reverse=True)]
     elif hepsi: lines.append("Temiz kurulum yok")
     al=sum(1 for b in bul if b[2]=='AL' and b[1]!='TREND')
     sat=sum(1 for b in bul if b[2]=='SAT' and b[1]!='TREND')
@@ -200,7 +200,7 @@ def loop():
             for b in yeni: seen.add((b[0],b[1],b[5]))
             if yeni:
                 ts=datetime.now(TZ).strftime("%H:%M")
-                msg=["📡 KRİPTO SUPERTREND", f"🕐 {ts} · {INTERVAL}", "──────────────"]+[satir(b) for b in yeni]
+                msg=["📡 KRİPTO SUPERTREND", f"🕐 {ts} · {INTERVAL}", "──────────────"]+[satir(b) for b in sorted(yeni,key=lambda b:b[8],reverse=True)]
                 tg("\n".join(msg))
             if len(seen)>5000: seen.clear()
         except Exception as e:
