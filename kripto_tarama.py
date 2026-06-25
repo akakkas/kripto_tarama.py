@@ -1,10 +1,37 @@
-import ccxt, numpy as np
+import ccxt, os, requests, numpy as np
 from datetime import datetime, timezone, timedelta
 
 INTERVAL="15m"; PERIOD=10; MULT=3.0; LIMIT=200
 LOOKBACK=3; RVOLW=20; TOPN=150; MINVOL=20_000_000
 BBP=20; BBK=2.0; MAXEXT=0.03; RVOLMIN=1.5
 TZ=timezone(timedelta(hours=3))
+
+def load_env(path=os.path.expanduser("~/.ktenv")):
+    d={}
+    try:
+        with open(path) as f:
+            for ln in f:
+                ln=ln.strip()
+                if "=" in ln and not ln.startswith("#"):
+                    k,v=ln.split("=",1); d[k.strip()]=v.strip()
+    except FileNotFoundError:
+        pass
+    return d
+
+_e=load_env()
+TG_TOKEN=_e.get("TG_TOKEN",""); TG_CHAT_ID=_e.get("TG_CHAT_ID","")
+TG_ON=bool(TG_TOKEN and TG_CHAT_ID)
+
+def tg(text):
+    if not TG_ON:
+        print("[TG kapali]\n"+text); return
+    try:
+        r=requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+                        json={"chat_id":TG_CHAT_ID,"text":text}, timeout=15)
+        j=r.json()
+        if not j.get("ok"): print("  ! TG hata:", j.get("description"))
+    except Exception as ex:
+        print("  ! TG:", ex)
 
 def supertrend(h,l,c,period=PERIOD,mult=MULT):
     n=len(c); hl2=(h+l)/2.0
@@ -75,8 +102,7 @@ def main():
                 key=lambda x:x[1],reverse=True)[:TOPN]
     syms=[s for s,_ in rows]
     print(f"Evren: {len(syms)} perp · {INTERVAL}")
-    bul=[]
-    need=max(PERIOD,BBP)+LOOKBACK+3
+    bul=[]; need=max(PERIOD,BBP)+LOOKBACK+3
     for s in syms:
         try: raw=ex.fetch_ohlcv(s,INTERVAL,limit=LIMIT)
         except Exception as e: print("  !",s,e); continue
@@ -86,14 +112,21 @@ def main():
         st,d=supertrend(h,l,c); mb,up,dn=bollinger(c)
         tip,yon,rv=sinyal_bul(c,st,d,mb,up,dn,v)
         if tip is None: continue
-        px=float(c[-1])
-        bul.append((s,tip,yon,px,rv))
-        ico="🟢" if yon=="AL" else "🔴"
-        if tip=="RETEST": ico="♻️"
+        px=float(c[-1]); bul.append((s,tip,yon,px,rv))
+        ico="♻️" if tip=="RETEST" else ("🟢" if yon=="AL" else "🔴")
         print(f"  {ico} {s.split('/')[0]:<10} {tip}/{yon}  px:{px}  rvol:{rv:.1f}x")
     ts=datetime.now(TZ).strftime("%H:%M")
     al=sum(1 for b in bul if b[2]=='AL'); sat=sum(1 for b in bul if b[2]=='SAT')
     print(f"\nÖZET {ts} — AL:{al} SAT:{sat}  (toplam {len(bul)})")
+    lines=["📡 KRİPTO SUPERTREND", f"🕐 {ts} · {INTERVAL} · {len(syms)} perp", "──────────────"]
+    if bul:
+        for s,tip,yon,px,rv in bul:
+            ico="♻️" if tip=="RETEST" else ("🟢" if yon=="AL" else "🔴")
+            lines.append(f"{ico} {s.split('/')[0]} {tip}/{yon}  px:{px} rvol:{rv:.1f}x")
+    else:
+        lines.append("Temiz kurulum yok")
+    lines.append("──────────────"); lines.append(f"AL:{al} SAT:{sat}")
+    tg("\n".join(lines))
 
 if __name__=="__main__":
     main()
