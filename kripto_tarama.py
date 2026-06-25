@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 INTERVAL="15m"; HTF="1h"; PERIOD=10; MULT=3.0; LIMIT=200
 LOOKBACK=3; RVOLW=20; TOPN=150; MINVOL=20_000_000
 BBP=20; BBK=2.0; MAXEXT=0.03; RVOLMIN=1.5; SWINGK=6
-RETEST_TOL=0.25; TOUCHLB=10
+RETEST_TOL=0.25; TOUCHLB=10; REV_RVOL=1.5
 BAR_SEC=15*60; BUFFER=5
 TZ=timezone(timedelta(hours=3))
 
@@ -104,9 +104,9 @@ def sinyal_bul(close,st,d,mb,up,dn,vol,ts,high,low):
     # trend-health: açık trendde orta band kaybı = çıkış uyarısı (whipsaw filtresi: band dokunmuş olmalı)
     if not np.isnan(mbv) and not np.isnan(mb[-2]):
         if d[-1]==1 and (high[-TOUCHLB:]>=up[-TOUCHLB:]).any() and close[-2]>=mb[-2] and c<mbv:
-            return ("TREND","SAT",rv,int(ts[-1]))
+            return ("REV" if rv>=REV_RVOL else "TREND","SAT",rv,int(ts[-1]))
         if d[-1]==-1 and (low[-TOUCHLB:]<=dn[-TOUCHLB:]).any() and close[-2]<=mb[-2] and c>mbv:
-            return ("TREND","AL",rv,int(ts[-1]))
+            return ("REV" if rv>=REV_RVOL else "TREND","AL",rv,int(ts[-1]))
     return (None,None,rv,0)
 
 def rr_hesapla(yon,px,h,l,up,dn):
@@ -158,7 +158,7 @@ def tarama():
             arrow="↓" if yon=="SAT" else "↑"; cik="long" if yon=="SAT" else "short"
             print(f"  🟡 {s.split('/')[0]:<10} TREND{arrow} ({cik}-çıkış)  px:{f(px)} · orta band kırıldı")
             continue
-        ico="♻️" if tip=="RETEST" else ("🟢" if yon=="AL" else "🔴")
+        ico="🔄" if tip=="REV" else ("♻️" if tip=="RETEST" else ("🟢" if yon=="AL" else "🔴"))
         teyit="✅" if htf_ok else "⚠️"
         print(f"  {ico} {s.split('/')[0]:<10} {tip}/{yon} {teyit}  px:{f(px)} stop:{f(stop)} tp:{f(tp)} R:R{rr:.1f} rvol:{rv:.1f}x")
     return bul,len(syms)
@@ -169,7 +169,7 @@ def satir(b):
         ico="🟢⬆️❌" if yon=="SAT" else "🔴⬇️✖️"; cik="Long" if yon=="SAT" else "Short"
         return (f"{ico} {s.split('/')[0]} — {cik} çıkış uyarısı\n"
                 f"    px:{f(px)} · rvol:{rv:.1f}x")
-    ico="♻️" if tip=="RETEST" else ("🟢" if yon=="AL" else "🔴")
+    ico="🔄" if tip=="REV" else ("♻️" if tip=="RETEST" else ("🟢" if yon=="AL" else "🔴"))
     teyit="✅1s" if htf_ok else "⚠️1s"
     return (f"{ico} {s.split('/')[0]} {tip}/{yon} {teyit}\n"
             f"    px:{f(px)} stop:{f(stop)} tp:{f(tp)} R:R {rr:.1f} rvol:{rv:.1f}x")
