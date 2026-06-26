@@ -127,8 +127,10 @@ def htf_yon(ex,sym,tf=HTF):
     st,d=supertrend(a[:,2],a[:,3],a[:,4])
     return int(d[-1])
 
+EX=ccxt.binanceusdm({"enableRateLimit":True,"timeout":30000}); EX.load_markets()
+
 def tarama():
-    ex=ccxt.binanceusdm({"enableRateLimit":True}); ex.load_markets()
+    ex=EX
     perp=[m["symbol"] for m in ex.markets.values()
           if m.get("swap") and m.get("linear") and m.get("quote")=="USDT" and m.get("active")]
     t=ex.fetch_tickers(perp)
