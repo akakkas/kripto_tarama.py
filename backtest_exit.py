@@ -11,9 +11,9 @@
 import ccxt, time, csv, os, numpy as np
 
 # ========================== AYARLAR ==========================
-N_SYMBOLS   = 30
-DAYS        = 60
-MAXBARS     = 192      # trend sürmeye izin var → 96'dan 192'ye (48 saat) çıkardım
+N_SYMBOLS   = 150
+DAYS        = 120
+MAXBARS     = 192    # trend sürmeye izin var → 96'dan 192'ye (48 saat) çıkardım
 FEE         = 0.0005
 ONLY_REV_RVOL = 1.5    # REV eşiği
 
