@@ -116,33 +116,33 @@ def fetch_tf(ex, sym, days, tf, tf_ms):
 
 # ========================== ÇIKIŞ SİMÜLATÖRLERİ ==========================
 def sim_15(i, yon, entry, stop, tp_band, MB, H, L, C):
-    """A=band tp, C=15m orta bant kırılımı. stop sert taban."""
+    """A=band tp, C=15m orta bant kırılımı. stop sert taban. Döner {m:(price,bar)}."""
     n=len(C); last=min(n-1,i+MAXBARS_15); res={}; pend={"A","C"}
     for j in range(i+1,last+1):
         hi=H[j]; lo=L[j]; cl=C[j]; mb=MB[j]
         if (lo<=stop) if yon=="AL" else (hi>=stop):
-            for m in list(pend): res[m]=stop
+            for m in list(pend): res[m]=(stop, j-i)
             pend.clear(); break
         if "A" in pend and ((hi>=tp_band) if yon=="AL" else (lo<=tp_band)):
-            res["A"]=tp_band; pend.discard("A")
+            res["A"]=(tp_band, j-i); pend.discard("A")
         if "C" in pend and not np.isnan(mb) and ((cl<mb) if yon=="AL" else (cl>mb)):
-            res["C"]=cl; pend.discard("C")
+            res["C"]=(cl, j-i); pend.discard("C")
         if not pend: break
-    for m in pend: res[m]=C[last]
+    for m in pend: res[m]=(C[last], last-i)
     return res
 
 def sim_5(entry_ms, yon, entry, stop, TS5, H5, L5, C5, MB5):
-    """B=5m orta bant kırılımı. stop sert taban. Döner exit_px veya None."""
+    """B=5m orta bant kırılımı. Döner (exit_px, bars5) veya None."""
     j0=int(np.searchsorted(TS5, entry_ms))
     if j0>=len(C5)-2: return None
     last=min(len(C5)-1, j0+MAXBARS_5)
     for j in range(j0, last+1):
         hi=H5[j]; lo=L5[j]; cl=C5[j]; mb=MB5[j]
         if (lo<=stop) if yon=="AL" else (hi>=stop):
-            return stop
+            return (stop, j-j0)
         if not np.isnan(mb) and ((cl<mb) if yon=="AL" else (cl>mb)):
-            return cl
-    return C5[last]
+            return (cl, j-j0)
+    return (C5[last], last-j0)
 
 def Rv(yon, entry, exitpx, risk):
     if risk<=0 or exitpx is None: return None
@@ -193,12 +193,16 @@ def run():
             entry_ms=int(TS[i])+15*60*1000
             ex5=sim_5(entry_ms,yon,px,stop,TS5,H5,L5,C5,MB5)
             if ex5 is None: continue   # 5m verisi kapsamıyorsa adil olsun diye trade'i atla
+            px_b,bars5=ex5
+            px_a,bar_a=r15["A"]; px_c,bar_c=r15["C"]
             row=dict(sym=sym,tip=tip,yon=yon,rr=round(rr,3))
-            row["R_A"]=round(Rv(yon,px,r15["A"],risk),4); row["pct_A"]=round(pct(yon,px,r15["A"]),3)
-            row["R_C"]=round(Rv(yon,px,r15["C"],risk),4); row["pct_C"]=round(pct(yon,px,r15["C"]),3)
-            row["R_B"]=round(Rv(yon,px,ex5,risk),4);      row["pct_B"]=round(pct(yon,px,ex5),3)
+            row["R_A"]=round(Rv(yon,px,px_a,risk),4); row["pct_A"]=round(pct(yon,px,px_a),3)
+            row["R_C"]=round(Rv(yon,px,px_c,risk),4); row["pct_C"]=round(pct(yon,px,px_c),3)
+            row["R_B"]=round(Rv(yon,px,px_b,risk),4); row["pct_B"]=round(pct(yon,px,px_b),3)
             trades.append(row); cs+=1
-            open_until=i+MAXBARS_15  # kabaca; çakışmayı önler
+            # kilidi SADECE referans modele (A=15m BAND, en kısa tutan) bağla.
+            # B ve C paralel ölçülür; uzun tutuşları yeni giriş bulmayı engellemesin.
+            open_until=i+bar_a
         print(f"[{idx}/{len(syms)}] {sym}: {cs} giriş")
 
     if not trades: print("\nHiç giriş yok."); return
