@@ -11,8 +11,8 @@
 import ccxt, time, csv, os, numpy as np
 
 # ========================== AYARLAR ==========================
-N_SYMBOLS = 60     # 5m veri ağır → ilk koşu 60. İstersen 103'e çıkar (uzun sürer).
-DAYS      = 90     # ilk koşu 90 gün. 120'ye çıkarabilirsin.
+N_SYMBOLS = 103     # 5m veri ağır → ilk koşu 60. İstersen 103'e çıkar (uzun sürer).
+DAYS      = 120     # ilk koşu 90 gün. 120'ye çıkarabilirsin.
 MAXBARS_15 = 96    # 30m modeller için tavan (48 saat = 96×30dk)
 MAXBARS_5  = 576   # 5m model için tavan (48 saat = 576×5dk)
 FEE       = 0.0005
