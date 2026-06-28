@@ -181,7 +181,7 @@ def run():
             risk=abs(px-stop)
             if rr<=0 or risk<=0: continue
 
-            epx=sim_15(i15,yon,px,stop,tp,MB15,H15,L15,C15)[0]
+            epx=sim_15(i15,yon,px,stop,tp,MB15,H15,L15,C15)["band"]
             trades.append(dict(sym=sym,tip=tip,yon=yon,d30=int(d30_val),
                                R=round(Rv(yon,px,epx,risk),4),pct=round(pct(yon,px,epx),3)))
             open_until=i15+10; cnt+=1
