@@ -190,24 +190,48 @@ def run():
         n=len(rows)
         if n==0: return None
         Rs=[r["R"] for r in rows]
-        return dict(n=n,win=100*sum(1 for x in Rs if x>0)/n,
+        wins=[x for x in Rs if x>0]
+        return dict(n=n,win=100*len(wins)/n,
                     expR=sum(Rs)/n,totR=sum(Rs),
                     avgpct=sum(r["pct"] for r in rows)/n,
-                    avgbars=sum(r["bars1"] for r in rows)/n)
+                    avgbars=sum(r["bars1"] for r in rows)/n,
+                    avgwin=(sum(wins)/len(wins)) if wins else 0,
+                    avglos=(sum(x for x in Rs if x<=0)/max(1,n-len(wins))))
     def line(name,s):
-        if not s: return f"{name:<32} -"
-        return (f"{name:<32} n={s['n']:<5} win%={s['win']:5.1f} | beklentiR={s['expR']:+.3f} "
-                f"toplamR={s['totR']:+7.1f} | ort%={s['avgpct']:+.2f} tut={s['avgbars']:.1f}s")
+        if not s: return f"{name:<30} -"
+        return (f"{name:<30} n={s['n']:<5} win%={s['win']:5.1f} | bekR={s['expR']:+.3f} "
+                f"topR={s['totR']:+7.1f} | ort%={s['avgpct']:+.2f} tut={s['avgbars']:.1f}s")
 
-    conf=[r for r in trades if r["confirmed"]==1]
-    unconf=[r for r in trades if r["confirmed"]==0]
-    print("\n"+"="*92)
-    print(f"TEYİTLİ RETEST — 15m RETEST giriş / 1h orta bant çıkış · {DAYS}g · {len(syms)} coin")
-    print("="*92)
-    print(line("TÜMÜ (teyitli+teyitsiz)", stat(trades)))
-    print(line("B) 1h-TEYİTLİ (senin filtren)", stat(conf)))
-    print(line("A) teyitsiz (karşı-trend)", stat(unconf)))
-    print("="*92)
+    conf=[r for r in trades if r["confirmed"]==1]      # 1h-uyumlu (trend-following)
+    counter=[r for r in trades if r["confirmed"]==0]   # 1h-karşı (mean-reversion) ← YENİ TEZ
+
+    print("\n"+"="*94)
+    print(f"BAYRAK ÇEVRİLDİ: KARŞI-TREND RETEST (mean-reversion) · {DAYS}g · {len(syms)} coin")
+    print("="*94)
+    print(line("TÜMÜ", stat(trades)))
+    print(line(">>> KARŞI-TREND (yeni tez)", stat(counter)))
+    print(line("    uyumlu (trend-follow)", stat(conf)))
+    print("-"*94)
+    print("  --- karşı-trend, yöne göre ---")
+    print(line("    karşı-trend AL", stat([r for r in counter if r["yon"]=="AL"])))
+    print(line("    karşı-trend SAT", stat([r for r in counter if r["yon"]=="SAT"])))
+    print("-"*94)
+    cs=stat(counter)
+    if cs and cs["n"]>0:
+        print(f"  karşı-trend kazanan ort: {cs['avgwin']:+.2f}R | kaybeden ort: {cs['avglos']:+.2f}R")
+        # bootstrap: karşı-trend pozitif mi yoksa şans mı?
+        import random
+        Rs=[r["R"] for r in counter]; n=len(Rs)
+        boots=[]
+        for _ in range(2000):
+            s=sum(random.choice(Rs) for _ in range(n))/n
+            boots.append(s)
+        boots.sort()
+        lo=boots[int(0.025*len(boots))]; hi=boots[int(0.975*len(boots))]
+        print(f"  bootstrap %95 güven aralığı: [{lo:+.3f}, {hi:+.3f}]  (n={n})")
+        if lo>0: print("  → alt sınır >0: dağıtım pozitif, ŞANS DEĞİL gibi ✅")
+        else:    print("  → alt sınır <0: sıfırı kapsıyor, henüz şanstan ayrışmadı ⚠️")
+    print("="*94)
     print(f"\nDetay: {out}\nÖzeti olduğu gibi Claude'a yapıştır.")
 
 if __name__=="__main__":
