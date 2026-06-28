@@ -160,21 +160,24 @@ def run():
             seen.add(trig)
             px=float(C[i])
             stop=float(np.min(L[max(0,i-SWINGK+1):i+1])) if yon=="AL" else float(np.max(H[max(0,i-SWINGK+1):i+1]))
-            tp=float(UP[i]) if yon=="AL" else float(DN[i])
             risk=abs(px-stop)
             if risk<=0: continue
-            # A) referans band
-            pa,bar_a=sim_band(i,yon,px,stop,tp,H,L,C)
-            # B) 1h kazananı sür
+            # giriş anındaki 1h orta bant
             entry_ms=int(TS[i])+15*60*1000
+            j1=int(np.searchsorted(TS1,entry_ms))
+            if j1>=len(C1): continue
+            mb1_now=MB1[min(j1,len(MB1)-1)]
+            if np.isnan(mb1_now): continue
+            # 1h TEYİT: fiyat 1h orta bandın doğru tarafında mı?
+            confirmed = (px>mb1_now) if yon=="AL" else (px<mb1_now)
+            # çıkış: 1h orta bant kırılana kadar sür (her iki gruba da aynı)
             rb=sim_1h(entry_ms,yon,px,stop,TS1,H1,L1,C1,MB1,maxbars_1h)
             if rb is None: continue
             pb,bars1=rb
-            trades.append(dict(sym=sym,yon=yon,
-                R_A=round(Rv(yon,px,pa,risk),4), pct_A=round(pct(yon,px,pa),3),
-                R_B=round(Rv(yon,px,pb,risk),4), pct_B=round(pct(yon,px,pb),3),
+            trades.append(dict(sym=sym,yon=yon,confirmed=int(confirmed),
+                R=round(Rv(yon,px,pb,risk),4), pct=round(pct(yon,px,pb),3),
                 bars1=bars1))
-            open_until=i+bar_a; cnt+=1
+            open_until=i+5; cnt+=1
         print(f"[{idx}/{len(syms)}] {sym}: {cnt} giriş")
 
     if not trades: print("\nHiç giriş yok."); return
@@ -183,26 +186,28 @@ def run():
         w=csv.DictWriter(fc,fieldnames=list(trades[0].keys())); w.writeheader()
         for tr in trades: w.writerow(tr)
 
-    def stat(rows,key):
+    def stat(rows):
         n=len(rows)
         if n==0: return None
-        Rs=[r[key] for r in rows]
+        Rs=[r["R"] for r in rows]
         return dict(n=n,win=100*sum(1 for x in Rs if x>0)/n,
                     expR=sum(Rs)/n,totR=sum(Rs),
-                    avgpct=sum(r[key.replace("R_","pct_")] for r in rows)/n)
+                    avgpct=sum(r["pct"] for r in rows)/n,
+                    avgbars=sum(r["bars1"] for r in rows)/n)
     def line(name,s):
-        if not s: return f"{name:<28} -"
-        return (f"{name:<28} n={s['n']:<5} win%={s['win']:5.1f} | beklentiR={s['expR']:+.3f} "
-                f"toplamR={s['totR']:+7.1f} | ort%={s['avgpct']:+.2f}")
+        if not s: return f"{name:<32} -"
+        return (f"{name:<32} n={s['n']:<5} win%={s['win']:5.1f} | beklentiR={s['expR']:+.3f} "
+                f"toplamR={s['totR']:+7.1f} | ort%={s['avgpct']:+.2f} tut={s['avgbars']:.1f}s")
 
-    avgbars=sum(r["bars1"] for r in trades)/len(trades)
-    print("\n"+"="*88)
-    print(f"KAZANANI SÜR — 15m RETEST giriş · {len(trades)} giriş · {DAYS}g · {len(syms)} coin")
-    print(f"1h çıkış ort. tutuş: {avgbars:.1f} saat")
-    print("="*88)
-    print(line("A) 15m vurkaç (referans)", stat(trades,"R_A")))
-    print(line("B) 1h orta bant (sür)",     stat(trades,"R_B")))
-    print("="*88)
+    conf=[r for r in trades if r["confirmed"]==1]
+    unconf=[r for r in trades if r["confirmed"]==0]
+    print("\n"+"="*92)
+    print(f"TEYİTLİ RETEST — 15m RETEST giriş / 1h orta bant çıkış · {DAYS}g · {len(syms)} coin")
+    print("="*92)
+    print(line("TÜMÜ (teyitli+teyitsiz)", stat(trades)))
+    print(line("B) 1h-TEYİTLİ (senin filtren)", stat(conf)))
+    print(line("A) teyitsiz (karşı-trend)", stat(unconf)))
+    print("="*92)
     print(f"\nDetay: {out}\nÖzeti olduğu gibi Claude'a yapıştır.")
 
 if __name__=="__main__":
